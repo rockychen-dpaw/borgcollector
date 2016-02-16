@@ -5,7 +5,7 @@ from django.forms.widgets import HiddenInput,TextInput
 
 from tablemanager.models import (Normalise,NormalTable,Normalise_NormalTable,Publish,
         Publish_NormalTable,ForeignTable,Input,NormalTable,Workspace,ForeignServer,DataSource,
-        PublishChannel)
+        PublishChannel,PublishStyle)
 from borg_utils.form_fields import GroupedModelChoiceField
 from borg_utils.widgets import MultiWidgetLayout
 from borg_utils.form_fields import GeoserverSettingForm,MetaTilingFactorField,GridSetField
@@ -247,7 +247,7 @@ class PublishForm(NormalTablePublishForm,GeoserverSettingForm):
     """
     A form for spatial table's Publish Model
     """
-    create_cache_layer = forms.BooleanField(required=False,label="create_cache_layer",initial={"enabled":True})
+    create_cache_layer = forms.BooleanField(required=False,label="create_cache_layer",initial=True)
     create_cache_layer.setting_type = "geoserver_setting"
 
     server_cache_expire = forms.IntegerField(label="server_cache_expire",min_value=0,required=False,initial=0,help_text="Expire server cache after n seconds (set to 0 to use source setting)")
@@ -276,4 +276,29 @@ class PublishForm(NormalTablePublishForm,GeoserverSettingForm):
     class Meta:
         model = Publish
         fields = ('name','workspace','interval','status','input_table','dependents','priority','kmi_title','kmi_abstract','sql','create_extra_index_sql','sld')
+
+class PublishStyleForm(BorgModelForm):
+    """
+    A form for spatial table's PublishStyle Model
+    """
+    default_style = forms.BooleanField(required=False,initial=False)
+
+    def __init__(self, *args, **kwargs):
+        kwargs['initial']=kwargs.get('initial',{})
+
+        if 'instance' in kwargs and  kwargs['instance']:
+            kwargs['initial']['default_style'] = kwargs['instance'].default_style
+
+        super(PublishStyleForm, self).__init__(*args, **kwargs)
+
+    def _post_clean(self):
+        self.instance.set_default_style = self.cleaned_data['default_style']
+        super(PublishStyleForm,self)._post_clean()
+        if self.errors:
+            return
+
+
+    class Meta:
+        model = PublishStyle
+        fields = ('name','publish','status','default_style','sld')
 

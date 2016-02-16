@@ -48,8 +48,6 @@ from borg_utils.hg_batch_push import try_set_push_owner, try_clear_push_owner, i
 from borg_utils.signals import refresh_select_choices
 from borg_utils.models import BorgModel
 
-from tablemanager.publish_action import PublishAction
-
 logger = logging.getLogger(__name__)
 
 slug_re = re.compile(r'^[a-z0-9_]+$')
@@ -1811,6 +1809,7 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
     create_extra_index_sql = SQLField(null=True, editable=True,blank=True)
     priority = models.PositiveIntegerField(default=1000)
     sld = XMLField(help_text="Styled Layer Descriptor", unique=False,blank=True,null=True)
+    default_style = models.ForeignKey('PublishStyle',null=True,on_delete=models.SET_NULL,related_name="+")
     pgdump_file = models.FileField(upload_to=get_full_data_file_name,storage=downloadFileSystemStorage,null=True,editable=False)
     style_file = models.FileField(upload_to=get_full_data_file_name,storage=downloadFileSystemStorage,null=True,editable=False)
     create_table_sql = SQLField(null=True, editable=False)
@@ -1860,6 +1859,11 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
             self.relation_2 = relation
         elif pos == 2:
             self.relation_3 = relation
+
+    @property
+    def publish_action(self):
+        from tablemanager.publish_action import PublishAction
+        return PublishAction(self.pending_actions)
 
     @property
     def feature_style(self):
@@ -2143,12 +2147,13 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
 
     def publish_meta_data(self):
         from application.models import Application_Layers
-        publish_action = PublishAction(self.pending_actions)
         if self.publish_status != ResourceStatus.Enabled:
             raise ValidationError("The publish({0}) is disabled".format(self.name))
 
         if not self.workspace.publish_channel.sync_geoserver_data:
             raise ValidationError("The publish channel({1}) of publish({0}) does not support geoserver.".format(self.name,self.workspace.publish_channel.name))
+        
+        publish_action = self.publish_action
 
         if publish_action.publish_all:
             raise ValidationError("Publish({0}) requires a full publish including data and metadata".format(self.name))
@@ -2291,7 +2296,7 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         if self.publish_status != ResourceStatus.Enabled:
             return None
 
-        publish_action = PublishAction(self.pending_actions)
+        publish_action = self.publish_action
 
         if not self.job_run_time:
             return publish_action.publish_all
@@ -2381,8 +2386,6 @@ class PublishEventListener(object):
         if not instance.save_signal_guard():
             return
 
-        instance.pending_actions = PublishAction().edit(instance).actions
-
         #save relationship first
         instance._del_relations = []
         #break the relationship between publish and publish_normaltable
@@ -2468,6 +2471,51 @@ class Publish_NormalTable(BorgModel):
                                                             )
         else:
             return self.publish.name if self.publish else ""
+
+class PublishStyle(BorgModel,ResourceStatusManagement):
+    name = models.SlugField(max_length=255, help_text="Name of Publish", validators=[validate_slug])
+    publish = models.ForeignKey(Publish,null=False)
+    status = models.CharField(max_length=32, choices=ResourceStatus.publish_status_options,default=ResourceStatus.Enabled.name)
+    sld = XMLField(help_text="Styled Layer Descriptor", unique=False,blank=True,null=True)
+    last_modify_time = models.DateTimeField(auto_now=False,auto_now_add=True,editable=False,default=timezone.now,null=False)
+
+    def clean(self):
+        self.sld = None if not self.sld else self.sld.strip()
+        if self.publish_status == ResourceStatus.Enabled and not self.sld:
+            raise ValidationError("Sld can't be empty.")
+
+        if self.set_default_style and self.status == ResourceStatus.Disabled:
+            raise ValidationError("Can't set disabled style as default style")
+
+        self.last_modify_time = timezone.now()
+
+    @property
+    def default_style(self):
+        if self.publish:
+            return self.publish.default_style == self
+        else:
+            return False
+
+    def __str__(self):
+        return "{}:{}".format(self.publish,self.name)
+
+    class Meta:
+        unique_together = (("publish","name"))
+        ordering = ("publish","name")
+
+class PublishStyleEventListener(object):
+    @staticmethod
+    @receiver(post_save, sender=PublishStyle)
+    def _post_save(sender, instance, **args):
+        if hasattr(instance,'set_default_style'):
+            if instance.set_default_style:
+                instance.publish.default_style = instance
+                instance.publish.last_modify_time = timezone.now()
+                instance.publish.save(update_fields=["default_style","last_modify_time"])
+            elif instance.publish.default_style == instance:
+                instance.publish.default_style = None
+                instance.publish.last_modify_time = timezone.now()
+                instance.publish.save(update_fields=["default_style","last_modify_time"])
 
 class Replica(models.Model):
     """

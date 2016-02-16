@@ -1,7 +1,10 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.signals import pre_save,post_save,post_delete
+from django.dispatch import receiver
 
 from borg_utils.resource_status import ResourceStatus
+from tablemanager.models import Publish,PublishStyle
 
 class PublishAction(object):
     """
@@ -18,6 +21,9 @@ class PublishAction(object):
         "relation_1":publish_data_action,
         "relation_2":publish_data_action,
         "relation_3":publish_data_action,
+        "sld":publish_feature_action,
+        "default_style": publish_feature_action,
+        "styles": publish_feature_action,
         "normal_tables":publish_data_action,
         "create_extra_index_sql": publish_data_action,
         "kmi_title": publish_feature_action,
@@ -60,7 +66,6 @@ class PublishAction(object):
 
     def edit(self,instance):
         existing_instance = None
-        from tablemanager.models import Publish
         if instance.pk:
             existing_instance = Publish.objects.get(pk = instance.pk)
 
@@ -158,4 +163,29 @@ class PublishAction(object):
     def clear_feature_action(self):
         self._clear_action(self.publish_feature_action)
         return self
+
+class PublishActionEventListener(object):
+    @staticmethod
+    @receiver(pre_save, sender=Publish)
+    def _publish_pre_save(sender, instance, **args):
+        if "update_fields" in args and args["update_fields"]:
+            if len(args["update_fields"]) == 1 and "pending_actions" in args["update_fields"]:
+                return
+            elif "status" in args["update_fields"] and instance.status == ResourceStatus.Enabled.name:
+                instance.pending_actions = PublishAction.publish_all_action.actions
+                return
+
+        instance.pending_actions = PublishAction().edit(instance).actions
+
+    @staticmethod
+    @receiver(post_delete, sender=PublishStyle)
+    def _publishstyle_post_delete(sender, instance, **args):
+        instance.publish.pending_actions = instance.publish.publish_action.column_changed("styles").actions
+        instance.publish.save(update_fields=["pending_actions"])
+
+    @staticmethod
+    @receiver(post_save, sender=PublishStyle)
+    def _publishstyle_post_save(sender, instance, **args):
+        instance.publish.pending_actions = instance.publish.publish_action.column_changed("styles").actions
+        instance.publish.save(update_fields=["pending_actions"])
 
