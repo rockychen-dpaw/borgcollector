@@ -285,11 +285,29 @@ class PublishStyleForm(BorgModelForm):
 
     def __init__(self, *args, **kwargs):
         kwargs['initial']=kwargs.get('initial',{})
-
+        instance = None
         if 'instance' in kwargs and  kwargs['instance']:
+            instance = kwargs['instance']
+
+        if instance:
             kwargs['initial']['default_style'] = kwargs['instance'].default_style
 
         super(PublishStyleForm, self).__init__(*args, **kwargs)
+
+        builtin_style = False
+        if instance and instance.pk:
+            self.fields['name'].widget.attrs['readonly'] = True
+            self.fields['publish'] = forms.ModelChoiceField(queryset=Publish.objects.filter(pk=kwargs['instance'].publish.pk))
+            builtin_style = instance.name == "builtin"
+            if builtin_style:
+                self.fields['description'].widget.attrs['readonly'] = True
+        
+        options = json.loads(self.fields['sld'].widget.option_json)
+        options['readOnly'] = builtin_style
+        #import ipdb;ipdb.set_trace()
+        self.fields['sld'].widget.option_json = json.dumps(options)
+
+
 
     def _post_clean(self):
         self.instance.set_default_style = self.cleaned_data['default_style']
@@ -300,5 +318,8 @@ class PublishStyleForm(BorgModelForm):
 
     class Meta:
         model = PublishStyle
-        fields = ('name','publish','status','default_style','sld')
+        fields = ('name','publish','description','status','default_style','sld')
+        widgets = {
+                "description": forms.TextInput(attrs={"style":"width:95%"})
+        }
 

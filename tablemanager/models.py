@@ -16,6 +16,7 @@ import traceback
 import xml.etree.ElementTree as ET
 from functools import wraps
 from datetime import datetime, timedelta
+from xml.dom import minidom
 
 from django.db import models, connection,transaction,connections
 from django.db.utils import load_backend, DEFAULT_DB_ALIAS
@@ -47,6 +48,7 @@ from borg_utils.signal_enable import SignalEnable
 from borg_utils.hg_batch_push import try_set_push_owner, try_clear_push_owner, increase_committed_changes, try_push_to_repository
 from borg_utils.signals import refresh_select_choices
 from borg_utils.models import BorgModel
+from borg_utils.utils import file_md5
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +156,7 @@ def switch_searchpath(cursor_pos=1,searchpath="{2}," + BorgConfiguration.BORG_SC
 class XMLField(models.TextField):
     def formfield(self, **kwargs):
         field = super(XMLField, self).formfield(**kwargs)
-        field.widget = CodeMirrorTextarea(mode="xml", theme="mdn-like")
+        field.widget = CodeMirrorTextarea(mode="xml", theme="mdn-like",config={"lineWrapping":True,"readOnly":True})
         return field
 
 class DatasourceWidget(CodeMirrorTextarea):
@@ -1832,9 +1834,6 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
 
     default_layer_setting = {}
 
-    _style_re = re.compile("<se:Name>(?P<layer>.*?)</se:Name>")
-    _property_re = re.compile("<ogc:PropertyName>(?P<property>.*?)</ogc:PropertyName>")
-
     def init_relations(self):
         """
         initialize relations
@@ -1866,39 +1865,15 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         return PublishAction(self.pending_actions)
 
     @property
-    def feature_style(self):
-        """
-        This implementation based on a assumption: publish is derived from only one geospatial table, and also if publish has a input table, publish will try to use the same style as the input table.
-        """
-        if not self.workspace.publish_channel.sync_geoserver_data:
-            #no need to update geoserver
-            return None
-
+    def builtin_style_file(self):
         if SpatialTable.check_normal(self.spatial_type):
             #is a normal table, no style file
             return None
-
-        sld = None
-        style_file = None
-        if self.sld and self.sld.strip():
-            #has customized sld
-            sld = self.sld
         elif self.input_table and self.input_table.spatial_type == self.spatial_type  and self.input_table.style_file:
             #publish's input_table has style file, use it
-            style_file = self.input_table.style_file
+            return self.input_table.style_file
 
-        if not sld and style_file:
-            #find the style file, copy it
-            with open(style_file,"rb") as f:
-                sld = f.read()
-
-        if sld:
-            _style_re = re.compile("<se:Name>(?P<layer>.*?)</se:Name>")
-            #do some transformation.
-            sld = self._style_re.sub("<se:Name>{}</se:Name>".format(self.table_name),sld,2)
-            sld = self._property_re.sub((lambda m: "<ogc:PropertyName>{}</ogc:PropertyName>".format(m.group(1).lower())), sld)
-
-        return sld
+        return None
 
     @property
     def relations(self):
@@ -2158,25 +2133,6 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         if publish_action.publish_all:
             raise ValidationError("Publish({0}) requires a full publish including data and metadata".format(self.name))
 
-        #prepare style file
-        style_file = None
-        sld = self.feature_style
-        if sld:
-            style_file_folder = None
-            if self.workspace.workspace_as_schema:
-                style_file_folder = os.path.join(BorgConfiguration.STYLE_FILE_DUMP_DIR,self.workspace.publish_channel.name, self.workspace.name)
-            else:
-                style_file_folder = os.path.join(BorgConfiguration.STYLE_FILE_DUMP_DIR,self.workspace.publish_channel.name)
-
-            if not os.path.exists(style_file_folder):
-                #dump dir does not exist, create it
-                os.makedirs(style_file_folder)
-
-            style_file = os.path.join(style_file_folder,self.table_name + ".sld")
-            with open(style_file,"wb") as f:
-                f.write(sld)
-
-
         try_set_push_owner("publish")
         hg = None
         try:
@@ -2200,8 +2156,13 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
 
             if self.geoserver_setting:
                 json_out["geoserver_setting"] = json.loads(self.geoserver_setting)
-            if style_file:
-                json_out["style_path"] = "{}{}".format(BorgConfiguration.MASTER_PATH_PREFIX,style_file)
+
+            #prepare publish styles.
+            json_out["default_style"] = self.default_style.name if self.default_style else None
+            json_out["styles"] = {}
+            for style in self.publishstyle_set.filter(status==ResourceStatus.Enabled.name):
+                dump_file = style.dump()
+                json_out["styles"][style.name] = {"file":"{}{}".format(BorgConfiguration.MASTER_PATH_PREFIX,dump_file),"md5":file_md5(dump_file)}
 
             #create the dir if required
             if not os.path.exists(os.path.dirname(json_file)):
@@ -2405,13 +2366,18 @@ class PublishEventListener(object):
                 instance.set_relation(pos,relation)
             pos += 1
 
+        #load the built-in style for new spatial publish object
+        if not instance.pk and SpatialTable.check_spatial(instance.spatial_type):
+            builtin_style_file = instance.builtin_style_file
+            if builtin_style_file:
+                builtin_style = None
+                with open(builtin_style_file) as f:
+                    builtin_style = f.read()
+                instance.default_style = PublishStyle(name="builtin",description=builtin_style_file,sld=builtin_style,status=ResourceStatus.Enabled.name,publish=instance,last_modify_time=timezone.now())
+
     @staticmethod
     @receiver(post_save, sender=Publish)
     def _post_save(sender, instance, **args):
-        if (hasattr(instance,"new_object") and getattr(instance,"new_object")):
-            delattr(instance,"new_object")
-            refresh_select_choices.send(instance,choice_family="publish")
-
         #import ipdb;ipdb.set_trace()
         if not instance.save_signal_enabled():
             return
@@ -2426,6 +2392,22 @@ class PublishEventListener(object):
             if relation and not relation.publish:
                 relation.publish = instance
                 relation.save()
+
+        if (hasattr(instance,"new_object") and getattr(instance,"new_object")):
+            builtin_style_file = instance.builtin_style_file
+            if builtin_style_file:
+                #load builtin style
+                builtin_style = None
+                with open(builtin_style_file) as f:
+                    builtin_style = f.read()
+                builtin_style = PublishStyle(name="builtin",description=builtin_style_file,sld=builtin_style,status=ResourceStatus.Enabled.name,publish=instance,last_modify_time=timezone.now())
+
+                builtin_style.publish = instance
+                builtin_style.set_default_style = True
+                builtin_style.save()
+
+            delattr(instance,"new_object")
+            refresh_select_choices.send(instance,choice_family="publish")
 
 class Publish_NormalTable(BorgModel):
     """
@@ -2474,18 +2456,35 @@ class Publish_NormalTable(BorgModel):
 
 class PublishStyle(BorgModel,ResourceStatusManagement):
     name = models.SlugField(max_length=255, help_text="Name of Publish", validators=[validate_slug])
-    publish = models.ForeignKey(Publish,null=False)
+    description = models.CharField(max_length=512,blank=True,null=True)
+    publish = models.ForeignKey(Publish,null=False,blank=False)
     status = models.CharField(max_length=32, choices=ResourceStatus.publish_status_options,default=ResourceStatus.Enabled.name)
     sld = XMLField(help_text="Styled Layer Descriptor", unique=False,blank=True,null=True)
     last_modify_time = models.DateTimeField(auto_now=False,auto_now_add=True,editable=False,default=timezone.now,null=False)
 
+    _style_name_re = re.compile("<se:Name>(?P<layer>.*?)</se:Name>")
+    _property_re = re.compile("<ogc:PropertyName>(?P<property>.*?)</ogc:PropertyName>")
+    _sld_root_parse_re = re.compile("(<[a-zA-Z0-9]+>?)|([a-zA-Z:0-9]+=\"[a-zA-Z0-9:/\. ]+\">?)")
+
+    def __init__(self,*args,**kwargs):
+        super(PublishStyle,self).__init__(*args,**kwargs)
+        if not self.pk and self.sld:
+            self.sld = self.format_style()
+
+
     def clean(self):
+        self.name= None if not self.name else self.name.strip()
+        if not self.pk and self.name.lower() == "builtin":
+            raise ValidationError("'builtin' is a reserved name used by the style file accompanied with geo data.")
+
         self.sld = None if not self.sld else self.sld.strip()
         if self.publish_status == ResourceStatus.Enabled and not self.sld:
             raise ValidationError("Sld can't be empty.")
 
         if self.set_default_style and self.status == ResourceStatus.Disabled:
             raise ValidationError("Can't set disabled style as default style")
+
+        self.sld = self.format_style()
 
         self.last_modify_time = timezone.now()
 
@@ -2495,6 +2494,73 @@ class PublishStyle(BorgModel,ResourceStatusManagement):
             return self.publish.default_style == self
         else:
             return False
+
+    def format_style(self):
+        """
+        reset <se:Name> based on publish name.
+        """
+        try:
+            sld = minidom.parseString(self.sld).toprettyxml(indent="    ")
+            sld = [line for line in sld.splitlines() if line.strip()]
+        except:
+            raise ValidationError("Incorrect xml format.{}".format(traceback.format_exc()))
+        
+        #format the StyledLayerDescriptor line because it is too long
+        """
+        line_elements = self._sld_root_parse_re.findall(sld[1])
+        if len(line_elements) > 1:
+            del sld[1]
+            index = 1
+            sld.insert(index,"{} {}".format(line_elements[0][0],line_elements[1][1]))
+            for element in line_elements[2:]:
+                index += 1
+                sld.insert(index,(" " * len(line_elements[0][0]) + " {}").format(element[1]))
+        """
+        sld = os.linesep.join(sld)
+    
+        if sld and self.publish:
+            #do some transformation.
+            sld = self._style_name_re.sub("<se:Name>{}</se:Name>".format(self.publish.table_name),sld,2)
+            sld = self._property_re.sub((lambda m: "<ogc:PropertyName>{}</ogc:PropertyName>".format(m.group(1).lower())), sld)
+
+        return sld
+
+    @property
+    def dump_file(self):
+        """
+        Return the dump file 
+        """
+        #prepare style file
+        style_file_folder = None
+        if self.publish.workspace.workspace_as_schema:
+            style_file_folder = os.path.join(BorgConfiguration.STYLE_FILE_DUMP_DIR,self.publish.workspace.publish_channel.name, self.publish.workspace.name)
+        else:
+            style_file_folder = os.path.join(BorgConfiguration.STYLE_FILE_DUMP_DIR,self.publish.workspace.publish_channel.name)
+
+        style_file_name = "{}.sld".format(self.publish.table_name) if self.name == "builtin" else "{}.{}.sld".format(self.publish.table_name,self.name)
+
+        style_file = os.path.join(style_file_folder,style_file_name)
+
+        return style_file
+
+
+    def dump(self):
+        """
+        dump the style to a file
+        Return the file name
+        """
+        style_file = self.dump_file
+        style_file_folder = os.path.dirname(style_file)
+
+        if not os.path.exists(style_file_folder):
+            #dump dir does not exist, create it
+            os.makedirs(style_file_folder)
+
+        with open(style_file,"wb") as f:
+            f.write(self.sld)
+
+        return style_file
+
 
     def __str__(self):
         return "{}:{}".format(self.publish,self.name)

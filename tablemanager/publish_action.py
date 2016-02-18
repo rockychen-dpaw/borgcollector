@@ -180,12 +180,42 @@ class PublishActionEventListener(object):
     @staticmethod
     @receiver(post_delete, sender=PublishStyle)
     def _publishstyle_post_delete(sender, instance, **args):
+        if not instance.pk:
+            return
+        o = None
+        try:
+            o = PublishStyle.objects.get(pk=instance.pk)
+        except:
+            return
+        if o.status == ResourceStatus.Disabled.name:
+            return
+
         instance.publish.pending_actions = instance.publish.publish_action.column_changed("styles").actions
         instance.publish.save(update_fields=["pending_actions"])
 
     @staticmethod
-    @receiver(post_save, sender=PublishStyle)
-    def _publishstyle_post_save(sender, instance, **args):
+    @receiver(pre_save, sender=PublishStyle)
+    def _publishstyle_pre_save(sender, instance, **args):
+        o = None
+        if instance.pk:
+            try:
+                o = PublishStyle.objects.get(pk=instance.pk)
+            except:
+                pass
+        if o:
+            #update a style
+            if o.status == instance.status:
+                #style's status is not changed
+                if o.status == ResourceStatus.Disabled.name:
+                    #style is disalbed
+                    return
+                elif o.sld == instance.sld:
+                    #style is enabled,but sld is same
+                    return
+        elif instance.status == ResourceStatus.Disabled.name:
+            #new style, but is disabled
+            return
+                
         instance.publish.pending_actions = instance.publish.publish_action.column_changed("styles").actions
         instance.publish.save(update_fields=["pending_actions"])
 

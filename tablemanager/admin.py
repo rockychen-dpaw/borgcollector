@@ -597,7 +597,7 @@ class NormaliseAdmin(VersionAdmin,JobFields):
         return actions 
 
 class PublishAdmin(VersionAdmin,JobFields):
-    list_display = ("name","workspace","spatial_type_desc","_default_style","interval","status","_publish_content","_job_id", "_job_batch_id", "_job_status","waiting","running","completed","failed")
+    list_display = ("name","workspace","spatial_type_desc","_default_style","interval","_enabled","_publish_content","_job_id", "_job_batch_id", "_job_status","waiting","running","completed","failed")
     readonly_fields = ("applications","_create_table_sql","spatial_type_desc","_style_file","_table_data","last_modify_time","_publish_content","_job_batch_id","_job_id","_job_status","_job_message","waiting","running","completed","failed")
     search_fields = ["name","status","workspace__name"]
 
@@ -612,6 +612,12 @@ class PublishAdmin(VersionAdmin,JobFields):
         else:
             return PublishForm
         
+
+    def _enabled(self,o):
+        return o.status == ResourceStatus.Enabled.name
+
+    _enabled.boolean = True
+    _enabled.short_description = "Enabled"
 
     def _publish_content(self,o):
         result = o.is_up_to_date()
@@ -873,7 +879,7 @@ class PublishAdmin(VersionAdmin,JobFields):
         return actions 
 
 class PublishStyleAdmin(VersionAdmin):
-    list_display = ("id","publish","name","_default_style","status","last_modify_time")
+    list_display = ("id","publish","name","_default_style","_enabled","last_modify_time")
     search_fields = ["name","status","publish__name"]
 
     form = PublishStyleForm
@@ -884,6 +890,11 @@ class PublishStyleAdmin(VersionAdmin):
     _default_style.boolean = True
     _default_style.short_description = "Default Style"
 
+    def _enabled(self,o):
+        return o.status == ResourceStatus.Enabled.name
+
+    _enabled.boolean = True
+    _enabled.short_description = "Enabled"
 
     def enable_style(self,request,queryset):
         result = None
