@@ -1810,8 +1810,7 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
     spatial_type = models.IntegerField(default=1,editable=False)
     create_extra_index_sql = SQLField(null=True, editable=True,blank=True)
     priority = models.PositiveIntegerField(default=1000)
-    sld = XMLField(help_text="Styled Layer Descriptor", unique=False,blank=True,null=True)
-    default_style = models.ForeignKey('PublishStyle',null=True,on_delete=models.SET_NULL,related_name="+")
+    default_style = models.ForeignKey('Style',null=True,on_delete=models.SET_NULL,related_name="+")
     pgdump_file = models.FileField(upload_to=get_full_data_file_name,storage=downloadFileSystemStorage,null=True,editable=False)
     style_file = models.FileField(upload_to=get_full_data_file_name,storage=downloadFileSystemStorage,null=True,editable=False)
     create_table_sql = SQLField(null=True, editable=False)
@@ -2160,7 +2159,7 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
             #prepare publish styles.
             json_out["default_style"] = self.default_style.name if self.default_style else None
             json_out["styles"] = {}
-            for style in self.publishstyle_set.filter(status==ResourceStatus.Enabled.name):
+            for style in self.style_set.filter(status==ResourceStatus.Enabled.name):
                 dump_file = style.dump()
                 json_out["styles"][style.name] = {"file":"{}{}".format(BorgConfiguration.MASTER_PATH_PREFIX,dump_file),"md5":file_md5(dump_file)}
 
@@ -2373,7 +2372,7 @@ class PublishEventListener(object):
                 builtin_style = None
                 with open(builtin_style_file) as f:
                     builtin_style = f.read()
-                instance.default_style = PublishStyle(name="builtin",description=builtin_style_file,sld=builtin_style,status=ResourceStatus.Enabled.name,publish=instance,last_modify_time=timezone.now())
+                instance.default_style = Style(name="builtin",description=builtin_style_file,sld=builtin_style,status=ResourceStatus.Enabled.name,publish=instance,last_modify_time=timezone.now())
 
     @staticmethod
     @receiver(post_save, sender=Publish)
@@ -2400,7 +2399,7 @@ class PublishEventListener(object):
                 builtin_style = None
                 with open(builtin_style_file) as f:
                     builtin_style = f.read()
-                builtin_style = PublishStyle(name="builtin",description=builtin_style_file,sld=builtin_style,status=ResourceStatus.Enabled.name,publish=instance,last_modify_time=timezone.now())
+                builtin_style = Style(name="builtin",description=builtin_style_file,sld=builtin_style,status=ResourceStatus.Enabled.name,publish=instance,last_modify_time=timezone.now())
 
                 builtin_style.publish = instance
                 builtin_style.set_default_style = True
@@ -2454,7 +2453,7 @@ class Publish_NormalTable(BorgModel):
         else:
             return self.publish.name if self.publish else ""
 
-class PublishStyle(BorgModel,ResourceStatusManagement):
+class Style(BorgModel,ResourceStatusManagement):
     name = models.SlugField(max_length=255, help_text="Name of Publish", validators=[validate_slug])
     description = models.CharField(max_length=512,blank=True,null=True)
     publish = models.ForeignKey(Publish,null=False,blank=False)
@@ -2467,7 +2466,7 @@ class PublishStyle(BorgModel,ResourceStatusManagement):
     _sld_root_parse_re = re.compile("(<[a-zA-Z0-9]+>?)|([a-zA-Z:0-9]+=\"[a-zA-Z0-9:/\. ]+\">?)")
 
     def __init__(self,*args,**kwargs):
-        super(PublishStyle,self).__init__(*args,**kwargs)
+        super(Style,self).__init__(*args,**kwargs)
         if not self.pk and self.sld:
             self.sld = self.format_style()
 
@@ -2569,9 +2568,9 @@ class PublishStyle(BorgModel,ResourceStatusManagement):
         unique_together = (("publish","name"))
         ordering = ("publish","name")
 
-class PublishStyleEventListener(object):
+class StyleEventListener(object):
     @staticmethod
-    @receiver(post_save, sender=PublishStyle)
+    @receiver(post_save, sender=Style)
     def _post_save(sender, instance, **args):
         if hasattr(instance,'set_default_style'):
             if instance.set_default_style:

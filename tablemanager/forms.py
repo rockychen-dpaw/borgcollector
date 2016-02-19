@@ -5,7 +5,7 @@ from django.forms.widgets import HiddenInput,TextInput
 
 from tablemanager.models import (Normalise,NormalTable,Normalise_NormalTable,Publish,
         Publish_NormalTable,ForeignTable,Input,NormalTable,Workspace,ForeignServer,DataSource,
-        PublishChannel,PublishStyle)
+        PublishChannel,Style)
 from borg_utils.form_fields import GroupedModelChoiceField
 from borg_utils.widgets import MultiWidgetLayout
 from borg_utils.form_fields import GeoserverSettingForm,MetaTilingFactorField,GridSetField
@@ -275,11 +275,11 @@ class PublishForm(NormalTablePublishForm,GeoserverSettingForm):
 
     class Meta:
         model = Publish
-        fields = ('name','workspace','interval','status','input_table','dependents','priority','kmi_title','kmi_abstract','sql','create_extra_index_sql','sld')
+        fields = ('name','workspace','interval','status','input_table','dependents','priority','kmi_title','kmi_abstract','sql','create_extra_index_sql')
 
-class PublishStyleForm(BorgModelForm):
+class StyleForm(BorgModelForm):
     """
-    A form for spatial table's PublishStyle Model
+    A form for spatial table's Style Model
     """
     default_style = forms.BooleanField(required=False,initial=False)
 
@@ -292,7 +292,7 @@ class PublishStyleForm(BorgModelForm):
         if instance:
             kwargs['initial']['default_style'] = kwargs['instance'].default_style
 
-        super(PublishStyleForm, self).__init__(*args, **kwargs)
+        super(StyleForm, self).__init__(*args, **kwargs)
 
         builtin_style = False
         if instance and instance.pk:
@@ -311,13 +311,13 @@ class PublishStyleForm(BorgModelForm):
 
     def _post_clean(self):
         self.instance.set_default_style = self.cleaned_data['default_style']
-        super(PublishStyleForm,self)._post_clean()
+        super(StyleForm,self)._post_clean()
         if self.errors:
             return
 
 
     class Meta:
-        model = PublishStyle
+        model = Style
         fields = ('name','publish','description','status','default_style','sld')
         widgets = {
                 "description": forms.TextInput(attrs={"style":"width:95%"})

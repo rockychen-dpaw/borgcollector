@@ -14,13 +14,13 @@ from django.utils import timezone
 from tablemanager.models import (
     ForeignServer,ForeignTable, Input, NormalTable,
     Normalise, Workspace, Publish, Replica,
-    Normalise_NormalTable,PublishStyle,
+    Normalise_NormalTable,Style,
     PublishChannel,DataSource
 )
 from tablemanager.forms import (
     NormaliseForm,NormalTablePublishForm,PublishForm,ForeignServerForm,ForeignTableForm,
     InputForm,NormalTableForm,WorkspaceForm,DataSourceForm,
-    PublishChannelForm,PublishStyleForm
+    PublishChannelForm,StyleForm
 )
 from harvest.models import Job
 from harvest.jobstates import JobState
@@ -598,7 +598,7 @@ class NormaliseAdmin(VersionAdmin,JobFields):
 
 class PublishAdmin(VersionAdmin,JobFields):
     list_display = ("name","workspace","spatial_type_desc","_default_style","interval","_enabled","_publish_content","_job_id", "_job_batch_id", "_job_status","waiting","running","completed","failed")
-    readonly_fields = ("applications","_create_table_sql","spatial_type_desc","_style_file","_table_data","last_modify_time","_publish_content","_job_batch_id","_job_id","_job_status","_job_message","waiting","running","completed","failed")
+    readonly_fields = ("_default_style","applications","_create_table_sql","spatial_type_desc","_style_file","_table_data","last_modify_time","_publish_content","_job_batch_id","_job_id","_job_status","_job_message","waiting","running","completed","failed")
     search_fields = ["name","status","workspace__name"]
 
     #form = PublishForm
@@ -641,7 +641,7 @@ class PublishAdmin(VersionAdmin,JobFields):
 
     def _default_style(self,o):
         if o.default_style:
-            return "<a href='/tablemanager/publishstyle/{}/'>{}</a>".format(o.default_style.pk,o.default_style.name)
+            return "<a href='/tablemanager/style/{}/'>{}</a>".format(o.default_style.pk,o.default_style.name)
         else:
             return ""
     _default_style.allow_tags = True
@@ -878,11 +878,11 @@ class PublishAdmin(VersionAdmin,JobFields):
         actions['delete_selected'] = (PublishAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class PublishStyleAdmin(VersionAdmin):
+class StyleAdmin(VersionAdmin):
     list_display = ("id","publish","name","_default_style","_enabled","last_modify_time")
     search_fields = ["name","status","publish__name"]
 
-    form = PublishStyleForm
+    form = StyleForm
 
     def _default_style(self,o):
         return o.default_style if o else False
@@ -973,7 +973,7 @@ site.register(ForeignServer, ForeignServerAdmin)
 site.register(ForeignTable, ForeignTableAdmin)
 site.register(Input, InputAdmin)
 site.register(Publish, PublishAdmin)
-site.register(PublishStyle, PublishStyleAdmin)
+site.register(Style, StyleAdmin)
 site.register(Normalise, NormaliseAdmin)
 site.register(NormalTable, NormalTableAdmin)
 site.register(PublishChannel, PublishChannelAdmin)

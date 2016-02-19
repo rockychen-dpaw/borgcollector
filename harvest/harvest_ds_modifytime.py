@@ -13,7 +13,7 @@ from django.utils import timezone
 from borg_utils.spatial_table import SpatialTable
 from borg_utils.resource_status import ResourceStatus
 
-from tablemanager.models import Input,PublishStyle
+from tablemanager.models import Input,Style
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +54,14 @@ class HarvestModifyTime(object):
                     existing_builtin_style = None
                     builtin_style = None
                     try:
-                        existing_builtin_style = p.publishstyle_set.get(name="builtin")
+                        existing_builtin_style = p.style_set.get(name="builtin")
                     except ObjectDoesNotExist:
                         pass
 
                     builtin_style_file = p.builtin_style_file
                     if builtin_style_file:
                         #have builtin style
-                        builtin_style = existing_builtin_style or PublishStyle(name="builtin",description=builtin_style_file,status=ResourceStatus.Enabled.name,publish=p)
+                        builtin_style = existing_builtin_style or Style(name="builtin",description=builtin_style_file,status=ResourceStatus.Enabled.name,publish=p)
                         builtin_style.last_modify_time = timezone.now()
                         with open(builtin_style_file) as f:
                             builtin_style.sld = f.read()
@@ -80,7 +80,7 @@ class HarvestModifyTime(object):
                         #try set another default style if default style is the builtin style
                         if(p.default_style == existing_builtin_style):
                             try:
-                                p.default_style = p.publishstyle_set.exclude(pk=existing_builtin_style.pk).filter(status=ResourceStatus.Enabled.name)[0]
+                                p.default_style = p.style_set.exclude(pk=existing_builtin_style.pk).filter(status=ResourceStatus.Enabled.name)[0]
                             except:
                                 p.default_style = None
                             p.last_modify_time = timezone.now()

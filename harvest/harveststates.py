@@ -623,7 +623,7 @@ class DumpStyleFile(HarvestState):
 
     def execute(self,job,previous_state):
         # TBD
-        for style in job.publish.publishstyle_set.filter(status=ResourceStatus.Enabled.name):
+        for style in job.publish.style_set.filter(status=ResourceStatus.Enabled.name):
             style.dump()
 
         return (HarvestStateOutcome.succeed,None)
@@ -671,7 +671,7 @@ class SubmitToVersionControl(HarvestState):
         json_out["default_style"] = p.default_style.name if p.default_style else None
         json_out["styles"] = {}
         dump_file = None
-        for style in p.publishstyle_set.filter(status=ResourceStatus.Enabled.name):
+        for style in p.style_set.filter(status=ResourceStatus.Enabled.name):
             dump_file = style.dump_file
             json_out["styles"][style.name] = {"file":"{}{}".format(BorgConfiguration.MASTER_PATH_PREFIX,dump_file),"md5":file_md5(dump_file)}
 

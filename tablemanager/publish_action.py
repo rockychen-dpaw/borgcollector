@@ -4,7 +4,7 @@ from django.db.models.signals import pre_save,post_save,post_delete
 from django.dispatch import receiver
 
 from borg_utils.resource_status import ResourceStatus
-from tablemanager.models import Publish,PublishStyle
+from tablemanager.models import Publish,Style
 
 class PublishAction(object):
     """
@@ -21,7 +21,6 @@ class PublishAction(object):
         "relation_1":publish_data_action,
         "relation_2":publish_data_action,
         "relation_3":publish_data_action,
-        "sld":publish_feature_action,
         "default_style": publish_feature_action,
         "styles": publish_feature_action,
         "normal_tables":publish_data_action,
@@ -178,13 +177,13 @@ class PublishActionEventListener(object):
         instance.pending_actions = PublishAction().edit(instance).actions
 
     @staticmethod
-    @receiver(post_delete, sender=PublishStyle)
-    def _publishstyle_post_delete(sender, instance, **args):
+    @receiver(post_delete, sender=Style)
+    def _style_post_delete(sender, instance, **args):
         if not instance.pk:
             return
         o = None
         try:
-            o = PublishStyle.objects.get(pk=instance.pk)
+            o = Style.objects.get(pk=instance.pk)
         except:
             return
         if o.status == ResourceStatus.Disabled.name:
@@ -194,12 +193,12 @@ class PublishActionEventListener(object):
         instance.publish.save(update_fields=["pending_actions"])
 
     @staticmethod
-    @receiver(pre_save, sender=PublishStyle)
-    def _publishstyle_pre_save(sender, instance, **args):
+    @receiver(pre_save, sender=Style)
+    def _style_pre_save(sender, instance, **args):
         o = None
         if instance.pk:
             try:
-                o = PublishStyle.objects.get(pk=instance.pk)
+                o = Style.objects.get(pk=instance.pk)
             except:
                 pass
         if o:
