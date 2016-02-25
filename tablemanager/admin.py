@@ -4,7 +4,6 @@ import threading
 import logging
 
 from django.db import connection,transaction
-from reversion import VersionAdmin
 from django.core.urlresolvers import reverse
 from django.contrib import messages
 from django.http import HttpResponseRedirect
@@ -31,6 +30,7 @@ from borg_utils.spatial_table import SpatialTable
 from borg_utils.borg_config import BorgConfiguration
 from borg_utils.resource_status import ResourceStatus
 from borg_utils.hg_batch_push import try_set_push_owner, try_clear_push_owner, increase_committed_changes, try_push_to_repository
+from borg_utils.admin import BorgAdmin
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class JobFields(object):
     _job_message.allow_tags = True
     _job_message.short_description = "Job message"
 
-class PublishChannelAdmin(VersionAdmin):
+class PublishChannelAdmin(BorgAdmin):
     list_display = ("name", "sync_postgres_data","sync_geoserver_data","last_modify_time")
     readonly_fields = ("last_modify_time",)
     form = PublishChannelForm
@@ -142,7 +142,7 @@ class PublishChannelAdmin(VersionAdmin):
         return actions 
 
 
-class DataSourceAdmin(VersionAdmin):
+class DataSourceAdmin(BorgAdmin):
     list_display = ("name", "last_modify_time")
     search_fields = ["name"]
     form = DataSourceForm
@@ -198,7 +198,7 @@ class DataSourceAdmin(VersionAdmin):
         return actions 
 
 
-class WorkspaceAdmin(VersionAdmin):
+class WorkspaceAdmin(BorgAdmin):
     list_display = ("name","publish_channel","auth_level","_schema","_test_schema",)
     readonly_fields = ("_schema","_view_schema","_test_schema","_test_view_schema")
     #actions = [instantiate]
@@ -276,7 +276,7 @@ class WorkspaceAdmin(VersionAdmin):
         actions['delete_selected'] = (WorkspaceAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class ForeignServerAdmin(VersionAdmin):
+class ForeignServerAdmin(BorgAdmin):
     list_display = ("name","last_modify_time")
     readonly_fields = ("last_modify_time",)
     #actions = [instantiate]
@@ -334,7 +334,7 @@ class ForeignServerAdmin(VersionAdmin):
         actions['delete_selected'] = (ForeignServerAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class ForeignTableAdmin(VersionAdmin):
+class ForeignTableAdmin(BorgAdmin):
     list_display = ("name","last_modify_time")
     readonly_fields = ("last_modify_time",)
     #actions = [instantiate]
@@ -397,7 +397,7 @@ def _up_to_date(o):
 _up_to_date.short_description = "Up to date"
 _up_to_date.boolean = True
 
-class NormalTableAdmin(VersionAdmin):
+class NormalTableAdmin(BorgAdmin):
     list_display = ("name","_normalise","last_modify_time",_up_to_date)
     #actions = [instantiate]
     readonly_fields = ("_normalise","last_modify_time",_up_to_date)
@@ -462,7 +462,7 @@ class NormalTableAdmin(VersionAdmin):
         actions['delete_selected'] = (NormalTableAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class InputAdmin(VersionAdmin,JobFields):
+class InputAdmin(BorgAdmin,JobFields):
     list_display = ("name","data_source", "geometry", "extent", "count","last_modify_time",_up_to_date,"_job_id", "_job_batch_id", "_job_status")
     readonly_fields = ("spatial_type_desc","_style_file","title","abstract","_create_table_sql","ds_modify_time","last_modify_time",_up_to_date,"_job_batch_id","_job_id","_job_status","_job_message")
     search_fields = ["name","data_source__name"]
@@ -539,7 +539,7 @@ class InputAdmin(VersionAdmin,JobFields):
         actions['delete_selected'] = (InputAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class NormaliseAdmin(VersionAdmin,JobFields):
+class NormaliseAdmin(BorgAdmin,JobFields):
     list_display = ("name","output_table","last_modify_time",_up_to_date,"_job_id", "_job_batch_id","_job_status")
     readonly_fields = ("last_modify_time",_up_to_date,"_job_batch_id","_job_id","_job_status","_job_message")
     search_fields = ["__name"]
@@ -596,7 +596,7 @@ class NormaliseAdmin(VersionAdmin,JobFields):
         actions['delete_selected'] = (NormaliseAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class PublishAdmin(VersionAdmin,JobFields):
+class PublishAdmin(BorgAdmin,JobFields):
     list_display = ("name","workspace","spatial_type_desc","_default_style","interval","_enabled","_publish_content","_job_id", "_job_batch_id", "_job_status","waiting","running","completed","failed")
     readonly_fields = ("_default_style","applications","_create_table_sql","spatial_type_desc","last_modify_time","_publish_content","_job_batch_id","_job_id","_job_status","_job_message","waiting","running","completed","failed")
     search_fields = ["name","status","workspace__name"]
@@ -863,7 +863,7 @@ class PublishAdmin(VersionAdmin,JobFields):
         actions['delete_selected'] = (PublishAdmin.custom_delete_selected,self.default_delete_action[1],self.default_delete_action[2])
         return actions 
 
-class StyleAdmin(VersionAdmin):
+class StyleAdmin(BorgAdmin):
     list_display = ("id","publish","name","_default_style","_enabled","last_modify_time")
     search_fields = ["name","status","publish__name"]
 

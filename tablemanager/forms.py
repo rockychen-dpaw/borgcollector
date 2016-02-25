@@ -74,6 +74,9 @@ class InputForm(BorgModelForm):
     class Meta:
         model = Input
         fields = "__all__"
+        widgets = {
+                'data_source': forms.Select(attrs={"onChange":"$('#input_form').submit()"})
+        }
 
 class NormalTableForm(BorgModelForm):
     """

@@ -538,8 +538,11 @@ class Input(JobFields,SignalEnable):
         If data source is a file, the value is the file path.
         If data source is foreign table, the value is the connection parameters
         """
-        if not self._datasource and self.source:
-            self._datasource = self._datasource_re.findall(self.source)
+        if self.source:
+            if not self._datasource:
+                self._datasource = self._datasource_re.findall(self.source)
+        else:
+            self._datasource = None
         return self._datasource
 
     _style_file = 'N/A'
@@ -848,6 +851,9 @@ class Input(JobFields,SignalEnable):
             raise e
         except Exception as e:
             raise ValidationError(e)
+
+    def edit(self):
+        print str(self.data_source)
 
     def get_layer_name(self):
         """
