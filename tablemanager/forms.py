@@ -5,7 +5,7 @@ from django.forms.widgets import HiddenInput,TextInput
 
 from tablemanager.models import (Normalise,NormalTable,Normalise_NormalTable,Publish,
         Publish_NormalTable,ForeignTable,Input,NormalTable,Workspace,ForeignServer,DataSource,
-        PublishChannel,Style)
+        PublishChannel,Style,DatasourceType)
 from borg_utils.form_fields import GroupedModelChoiceField
 from borg_utils.widgets import MultiWidgetLayout
 from borg_utils.form_fields import GeoserverSettingForm,MetaTilingFactorField,GridSetField
@@ -53,9 +53,20 @@ class DataSourceForm(BorgModelForm):
         self.instance.enable_save_signal()
         return super(DataSourceForm, self).save(commit)
 
+    @classmethod
+    def get_fields(cls,obj=None):
+        if obj and obj.type != DatasourceType.FILE_SYSTEM:
+            return ["name","type","user","password","sql"]
+        else:
+            return ["name","type"]
+
+
     class Meta:
         model = DataSource
         fields = "__all__"
+        widgets = {
+                'type': forms.Select(attrs={"onChange":"$('#datasource_form').submit()"})
+        }
 
 class InputForm(BorgModelForm):
     """

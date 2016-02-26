@@ -50,6 +50,7 @@ class BorgModelForm(django.forms.ModelForm):
             # in editing mode
             if hasattr(self.instance,"edit"):
                 self.instance.edit()
+
             return
 
         exclude = self._get_validation_exclusions()

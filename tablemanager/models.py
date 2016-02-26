@@ -454,6 +454,14 @@ class ForeignTableEventListener(object):
     def _post_delete(sender, instance, **args):
         refresh_select_choices.send(instance,choice_family="foreigntable")
 
+class DatasourceType(object):
+    FILE_SYSTEM = "FileSystem"
+    ORACLE = "Oracle"
+
+    options = (
+        (FILE_SYSTEM,FILE_SYSTEM),
+        (ORACLE,ORACLE)
+    )
 
 @python_2_unicode_compatible
 class DataSource(BorgModel,SignalEnable):
@@ -462,22 +470,94 @@ class DataSource(BorgModel,SignalEnable):
 
     """
     name = models.SlugField(max_length=255, unique=True, help_text="The name of data source", validators=[validate_slug])
+    type = models.CharField(max_length=32, choices=DatasourceType.options,default="FileSystem", help_text="The type of data source")
+    user = models.CharField(max_length=320,null=True,blank=True)
+    password = models.CharField(max_length=320,null=True,blank=True)
+    sql = SQLField(default="CREATE SERVER {{self.name}} FOREIGN DATA WRAPPER oracle_fdw OPTIONS (dbserver '//<hostname>/<sid>');",null=True,blank=True)
     last_modify_time = models.DateTimeField(auto_now=False,auto_now_add=True,editable=False,default=timezone.now,null=False)
+
+    def drop(self,cursor,schema,name):
+        """
+        drop the foreign server from specified schema
+        """
+        if self.type != DatasourceType.FILE_SYSTEM:
+            cursor.execute("DROP SERVER IF EXISTS {0} CASCADE;".format(name))
+
+    @switch_searchpath()
+    def create(self,cursor,schema,name):
+        """
+        create the foreign server in specified schema
+        """
+        if self.type == DatasourceType.FILE_SYSTEM:
+            return
+
+        if self.name == name:
+            #not in validation mode
+            context = Context({"self": self})
+            connect_sql = Template(self.sql).render(context)
+        else:
+            #in validation mode, use the testing name replace the regular name
+            origname = self.name
+            self.name = name
+            context = Context({"self": self})
+            connect_sql = Template(self.sql).render(context)
+            #reset the name from testing name to regular name
+            self.name = origname
+
+        cursor.execute(connect_sql)
+        cursor.execute("CREATE USER MAPPING FOR {} SERVER {} OPTIONS (user '{}', password '{}');".format(cursor.engine.url.username, name, self.user, self.password))
 
     @in_schema(BorgConfiguration.TEST_SCHEMA, db_url=settings.FDW_URL)
     def clean(self, cursor,schema):
-        #generate the testing name
+        if self.type != DatasourceType.FILE_SYSTEM:
+            self.user = None if not self.user else self.user.strip()
+            if not self.user:
+                raise ValidationError("User can't be empty.")
+
+            self.password = None if not self.password else self.password.strip()
+            if not self.password:
+                raise ValidationError("Password can't be empty.")
+
+            self.sql = None if not self.sql else self.sql.strip()
+            if not self.sql:
+                raise ValidationError("Sql can't be empty.")
+            #check whether sql is ascii string
+            try:
+                self.sql = codecs.encode(self.sql,'ascii')
+            except :
+                raise ValidationError("Sql contains non ascii character.")
+
+        name = "test_" + self.name
+        try:
+            #import ipdb; ipdb.set_trace()
+            self.drop(cursor,schema,name)
+            self.create(cursor,schema,name)
+            #after validation, clear testing server and testing foreign table
+            self.drop(cursor,schema,name)
+        except ValidationError as e:
+            raise e
+        except Exception as e:
+            raise ValidationError(e)
+
         self.last_modify_time = timezone.now()
+
+    @in_schema("public", db_url=settings.FDW_URL)
+    def execute(self, cursor,schema):
+        """
+        create a foreign server
+        """
+        self.drop(cursor,schema,self.name)
+        self.create(cursor,schema,self.name)
 
     def delete(self,using=None):
         logger.info('Delete {0}:{1}'.format(type(self),self.name))
-        if try_set_push_owner("data_source"):
+        if try_set_push_owner("datasource"):
             try:
                 with transaction.atomic():
                     super(ForeignTable,self).delete(using)
-                try_push_to_repository('data_source')
+                try_push_to_repository('datasource')
             finally:
-                try_clear_push_owner("data_source")
+                try_clear_push_owner("datasource")
         else:
             super(DataSource,self).delete(using)
 
@@ -486,12 +566,51 @@ class DataSource(BorgModel,SignalEnable):
             super(DataSource,self).save(force_insert,force_update,using,update_fields)
 
     def __str__(self):
-        return self.name
+        return self.name or ""
 
     class Meta:
         ordering = ['name']
 
-@python_2_unicode_compatible
+class DataSourceEventListener(object):
+    """
+    Event listener for DataSource.
+
+    Encapsulated the event listener into a class is to resolve the issue "Exception TypeError: "'NoneType' object is not callable" in <function <lambda> at 0x7f45abef8aa0> ignored"
+    """
+    @staticmethod
+    @receiver(pre_save, sender=DataSource)
+    def _pre_save(sender, instance,**kwargs):
+        """
+        Bind a foreign table to the FDW database. Pre-save hook for ForeignTable.
+        """
+        if not instance.pk:
+            instance.new_object = True
+
+        if not instance.save_signal_guard():
+            return
+        instance.execute()
+
+    @staticmethod
+    @receiver(post_save, sender=DataSource)
+    def _post_save(sender, instance, **args):
+        if (hasattr(instance,"new_object") and getattr(instance,"new_object")):
+            delattr(instance,"new_object")
+            refresh_select_choices.send(instance,choice_family="datasource")
+
+    @staticmethod
+    @receiver(pre_delete, sender=ForeignTable)
+    def _pre_delete(sender, instance, **args):
+        # drop server and foreign tables.
+        # testing table and server have been droped immediately after validation.
+        cursor=create_engine(settings.FDW_URL).connect()
+        instance.drop(cursor, "public",instance.name)
+
+    @staticmethod
+    @receiver(post_delete, sender=ForeignTable)
+    def _post_delete(sender, instance, **args):
+        refresh_select_choices.send(instance,choice_family="foreigntable")
+
+
 class Input(JobFields,SignalEnable):
     """
     Represents an input table in the harvest DB. Also contains source info

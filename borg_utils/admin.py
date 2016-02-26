@@ -21,6 +21,14 @@ class BorgAdmin(VersionAdmin):
     Enable form editing mode.
     """
 
+    def get_customized_fieldsets(self, request, obj=None):
+        form = self.get_form(request, obj, fields=None)
+        if hasattr(form,"get_fields"):
+            fields = list(form.get_fields(obj)) + list(self.get_readonly_fields(request, obj))
+        else:
+            fields = self.get_fields(request,obj)
+        return [(None, {'fields': fields})]
+
     @csrf_protect_m
     @transaction.atomic
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
@@ -51,7 +59,6 @@ class BorgAdmin(VersionAdmin):
                 return self.add_view(request, form_url=reverse('admin:%s_%s_add' % (
                     opts.app_label, opts.model_name),
                     current_app=self.admin_site.name))
-
         ModelForm = self.get_form(request, obj)
         if request.method == 'POST':
             form = ModelForm(request.POST, request.FILES, instance=obj)
@@ -84,7 +91,7 @@ class BorgAdmin(VersionAdmin):
 
         adminForm = helpers.AdminForm(
             form,
-            list(self.get_fieldsets(request, obj)),
+            list(self.get_customized_fieldsets(request, obj or form.instance)),
             self.get_prepopulated_fields(request, obj),
             self.get_readonly_fields(request, obj),
             model_admin=self)

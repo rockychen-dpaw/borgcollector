@@ -143,7 +143,7 @@ class PublishChannelAdmin(BorgAdmin):
 
 
 class DataSourceAdmin(BorgAdmin):
-    list_display = ("name", "last_modify_time")
+    list_display = ("name","type", "last_modify_time")
     search_fields = ["name"]
     form = DataSourceForm
 
