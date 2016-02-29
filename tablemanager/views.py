@@ -119,7 +119,7 @@ class VRTFileView(View):
             d.update(fdw_dict)
 
         #instantiate vrt template
-        vrt = Template(vrt).render(Context({"self": d}))
+        vrt = Template(vrt).render(Context({"self": d,"db":settings.FDW_URL_SETTINGS}))
 
         root = None
         try:
@@ -222,10 +222,5 @@ class VRTFileView(View):
                 layer.append(ElementTree.Element("Field",attrib=element_attrs))
     
         return HttpResponse(self._xmltostring(root), content_type="text/plain")
-
-
-
-
-
 
 

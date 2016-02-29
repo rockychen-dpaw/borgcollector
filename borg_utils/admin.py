@@ -21,8 +21,7 @@ class BorgAdmin(VersionAdmin):
     Enable form editing mode.
     """
 
-    def get_customized_fieldsets(self, request, obj=None):
-        form = self.get_form(request, obj, fields=None)
+    def get_form_fieldsets(self, request,form, obj=None):
         if hasattr(form,"get_fields"):
             fields = list(form.get_fields(obj)) + list(self.get_readonly_fields(request, obj))
         else:
@@ -91,7 +90,7 @@ class BorgAdmin(VersionAdmin):
 
         adminForm = helpers.AdminForm(
             form,
-            list(self.get_customized_fieldsets(request, obj or form.instance)),
+            list(self.get_form_fieldsets(request,form, obj or form.instance)),
             self.get_prepopulated_fields(request, obj),
             self.get_readonly_fields(request, obj),
             model_admin=self)

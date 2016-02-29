@@ -1,14 +1,17 @@
 import json
+from itertools import ifilter
+
 from django import forms
 from django.core.exceptions import ObjectDoesNotExist,ValidationError
 from django.forms.widgets import HiddenInput,TextInput
+from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 
 from tablemanager.models import (Normalise,NormalTable,Normalise_NormalTable,Publish,
         Publish_NormalTable,ForeignTable,Input,NormalTable,Workspace,ForeignServer,DataSource,
         PublishChannel,Style,DatasourceType)
-from borg_utils.form_fields import GroupedModelChoiceField
+from borg_utils.form_fields import GroupedModelChoiceField,CachedModelChoiceField
 from borg_utils.widgets import MultiWidgetLayout
-from borg_utils.form_fields import GeoserverSettingForm,MetaTilingFactorField,GridSetField
+from borg_utils.form_fields import GeoserverSettingForm,MetaTilingFactorField,GridSetField,BorgSelect
 from borg_utils.forms import BorgModelForm
 
 class ForeignServerForm(BorgModelForm):
@@ -34,8 +37,14 @@ class ForeignTableForm(BorgModelForm):
     """
     def __init__(self, *args, **kwargs):
         super(ForeignTableForm, self).__init__(*args, **kwargs)
+        #remove the empty label
+        #self.fields['server'].empty_label=None
+
         if 'instance' in kwargs and  kwargs['instance'] and kwargs['instance'].pk:
             self.fields['name'].widget.attrs['readonly'] = True
+            #remote the "+" icon from html page because this field is readonly
+            self.fields['server'].widget = self.fields['server'].widget.widget
+            self.fields['server'].widget.attrs['readonly'] = True
 
     def save(self, commit=True):
         self.instance.enable_save_signal()
@@ -44,39 +53,80 @@ class ForeignTableForm(BorgModelForm):
     class Meta:
         model = ForeignTable
         fields = "__all__"
+        widgets = {
+                'server': BorgSelect(),
+        }
 
 class DataSourceForm(BorgModelForm):
     """
     A form for DataSource Model
     """
+    def __init__(self, *args, **kwargs):
+        super(DataSourceForm, self).__init__(*args, **kwargs)
+        #remove the empty label
+        #self.fields['type'].empty_label=None
+
+        if 'instance' in kwargs and  kwargs['instance'] and kwargs['instance'].pk:
+            self.fields['name'].widget.attrs['readonly'] = True
+            self.fields['type'].widget.attrs['readonly'] = True
+
     def save(self, commit=True):
         self.instance.enable_save_signal()
         return super(DataSourceForm, self).save(commit)
 
     @classmethod
     def get_fields(cls,obj=None):
-        if obj and obj.type != DatasourceType.FILE_SYSTEM:
-            return ["name","type","user","password","sql"]
+        if obj and obj.type == DatasourceType.DATABASE:
+            return ["name","type","description","user","password","sql"]
         else:
-            return ["name","type"]
+            return ["name","type","description"]
 
 
     class Meta:
         model = DataSource
         fields = "__all__"
         widgets = {
-                'type': forms.Select(attrs={"onChange":"$('#datasource_form').submit()"})
+                'type': BorgSelect(attrs={"onChange":"$('#datasource_form').submit()"}),
+                'description': forms.TextInput(attrs={"style":"width:95%"})
         }
 
 class InputForm(BorgModelForm):
     """
     A form for Input Model
     """
-    foreign_table = GroupedModelChoiceField('server',queryset=ForeignTable.objects.all(),required=False,choice_family="foreigntable",choice_name="foreigntable_options")
+    INSERT_FIELDS = 100
+    foreign_table = CachedModelChoiceField(queryset=ForeignTable.objects.all(),label_func=lambda table:table.name,required=False,choice_family="foreigntable",choice_name="foreigntable_options", widget=BorgSelect(attrs={"onChange":"$('#input_form').submit()"}))
     def __init__(self, *args, **kwargs):
         super(InputForm, self).__init__(*args, **kwargs)
         if 'instance' in kwargs and  kwargs['instance'] and kwargs['instance'].pk:
             self.fields['name'].widget.attrs['readonly'] = True
+
+            #remote the "+" icon from html page because this field is readonly
+            self.fields['data_source'].widget = self.fields['data_source'].widget.widget
+            self.fields['data_source'].widget.attrs['readonly'] = True
+            #remote the "+" icon from html page because this field is readonly
+            self.fields['foreign_table'].widget.attrs['readonly'] = True
+
+    def get_mode(self,data):
+        if data and "_insert_fields" in data:
+            return (InputForm.INSERT_FIELDS,"insert_fields",True,False)
+
+        return super(InputForm,self).get_mode(data)
+
+    def get_fields(self,obj=None):
+        if obj and hasattr(obj,"data_source") and obj.data_source.type == DatasourceType.DATABASE:
+            return ["name","data_source","foreign_table","generate_rowid","source"]
+        else:
+            return ["name","data_source","generate_rowid","source"]
+
+    def edit(self):
+        if self.instance and hasattr(self.instance,"data_source") and self.instance.data_source.type == DatasourceType.DATABASE:
+            self.fields['foreign_table'].queryset = ForeignTable.objects.filter(server=self.instance.data_source)
+            self.fields['foreign_table'].choice_name = "foreigntable_options_{}".format(self.instance.data_source.name)
+            self.fields['foreign_table'].widget.choices = self.fields['foreign_table'].choices
+
+    def insert_fields(self):
+        self.data['source'] = self.instance.source
 
     def save(self, commit=True):
         self.instance.enable_save_signal()
@@ -86,7 +136,7 @@ class InputForm(BorgModelForm):
         model = Input
         fields = "__all__"
         widgets = {
-                'data_source': forms.Select(attrs={"onChange":"$('#input_form').submit()"})
+                'data_source': BorgSelect(attrs={"onChange":"$('#input_form').submit()"}),
         }
 
 class NormalTableForm(BorgModelForm):
