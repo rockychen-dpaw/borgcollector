@@ -32,6 +32,10 @@ else:
     FDW_URL_SETTINGS = {}
 
 
+CSW_URL = os.environ.get('CSW_URL','')
+CSW_USER = os.environ.get('CSW_USER','')
+CSW_PASSWORD = os.environ.get('CSW_PASSWORD','')
+DEFAULT_CRS=os.environ.get("DEFAULT_CRS","EPSG:4326")
 
 from django.conf.global_settings import TEMPLATE_CONTEXT_PROCESSORS as TCP
 
