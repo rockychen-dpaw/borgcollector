@@ -39,8 +39,9 @@ def migrate(p,debug=False):
         #job not exist
         pass
     print "Migrate {}".format(p.table_name)
-    modify_time = None
     meta_data = p.builtin_metadata
+
+    modify_time = None
     meta_data["auto_update"] = True
     if p.kmi_title and p.kmi_title.strip():
         #has customized title
@@ -144,6 +145,6 @@ def migrate(p,debug=False):
     res = requests.post("{}/catalogue/api/records/".format(settings.CSW_URL),json=meta_data,auth=(settings.CSW_USER,settings.CSW_PASSWORD))
     res.raise_for_status()
     meta_data = res.json()
-    with open("/tmp/{}.json".format(p.table_name),"wb") as f:
+    with open("/tmp/{}.{}.json".format(p.workspace.name,p.table_name),"wb") as f:
         json.dump(meta_data, f, indent=4)
 

@@ -157,6 +157,8 @@ HARVEST_CONFIG = {
     "PUBLISH_VIEW_SCHEMA" : "publish_view",
     "FULL_DATA_DUMP_DIR" : os.path.abspath(os.path.join(DOWNLOAD_ROOT, "full_data")),
     "STYLE_FILE_DUMP_DIR" : os.path.abspath(os.path.join(DOWNLOAD_ROOT, "style_file")),
+    "WMS_LAYER_DIR" : os.path.abspath(os.path.join(DOWNLOAD_ROOT, "wms_layer")),
+    "WMS_STORE_DIR" : os.path.abspath(os.path.join(DOWNLOAD_ROOT, "wms_store")),
     "WORKSPACE_AS_SCHEMA" : True,
     "MAX_TEST_IMPORT_TIME" : 5, #seconds
     "RETRY_INTERVAL" : 300, #seconds

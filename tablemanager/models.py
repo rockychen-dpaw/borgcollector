@@ -2422,6 +2422,22 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         meta_data["title"] = self.title
         meta_data["abstract"] = self.abstract
 
+        modify_time = None
+        if self.input_table:
+            for ds in self.input_table.datasource:
+                if os.path.exists(ds):
+                    input_modify_time = datetime.utcfromtimestamp(os.path.getmtime(ds)).replace(tzinfo=pytz.UTC)
+                    if modify_time:
+                        if modify_time < input_modify_time:
+                            modify_time = input_modify_time
+                    else:
+                        modify_time = input_modify_time
+                else:
+                    modify_time = self.last_modify_time
+        else:
+            modify_time = self.last_modify_time
+        meta_data["modified"] = modify_time.astimezone(timezone.get_default_timezone()).strftime("%Y-%m-%d %H:%M:%S.%f")
+
         #bbox
         if SpatialTable.check_spatial(self.spatial_type):
             cursor=connection.cursor()
