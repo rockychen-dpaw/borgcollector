@@ -8,6 +8,7 @@ from io import open
 import hglib
 import json
 import requests
+from datetime import datetime
 
 from django.db import transaction,models,connection
 from django.utils import timezone
@@ -618,7 +619,7 @@ class UpdateCatalogService(HarvestState):
 
     def execute(self,job,previous_state):
         p = job.publish
-        meta_data = p.update_catalogue_service(style_dump_dir=job.dump_dir,md5=True)
+        meta_data = p.update_catalogue_service(style_dump_dir=job.dump_dir,md5=True,extra_datas={"publication_date":datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")})
 
         #write meta data file
         file_name = "{}.meta.json".format(p.table_name)

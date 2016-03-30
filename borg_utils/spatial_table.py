@@ -16,7 +16,7 @@ class SpatialTable(object):
     _drop_index_sql = "DROP INDEX IF EXISTS \"{0}\".\"{1}\""
 
     _retrieve_bbox_sql = "SELECT ST_XMIN(a.bbox), ST_YMIN(a.bbox), ST_XMAX(a.bbox), ST_YMAX(a.bbox) FROM (SELECT st_extent(\"{2}\") AS bbox  FROM \"{0}\".\"{1}\") a"
-    _retrieve_crs_sql = "SELECT public.ST_SRID({2}) FROM {0}.{1} LIMIT 1;"
+    _retrieve_crs_sql = "SELECT public.ST_SRID({2}) FROM \"{0}\".\"{1}\" LIMIT 1;"
 
     _database = (settings.DATABASES["default"])["NAME"]
     _cache = dict()
