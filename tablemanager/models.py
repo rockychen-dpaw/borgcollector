@@ -1719,6 +1719,11 @@ class PublishChannel(BorgModel,SignalEnable):
     name = models.SlugField(max_length=255, unique=True, help_text="Name of publish destination", validators=[validate_slug])
     sync_postgres_data = models.BooleanField(default=True)
     sync_geoserver_data = models.BooleanField(default=True)
+    wfs_version = models.CharField(max_length=32, null=True,blank=True)
+    wfs_endpoint = models.CharField(max_length=256, null=True,blank=True)
+    wms_version = models.CharField(max_length=32, null=True,blank=True)
+    wms_endpoint = models.CharField(max_length=256, null=True,blank=True)
+    gwc_endpoint = models.CharField(max_length=256, null=True,blank=True)
     last_modify_time = models.DateTimeField(auto_now=False,auto_now_add=True,editable=False,default=timezone.now,null=False)
 
     def delete(self,using=None):
@@ -1734,7 +1739,9 @@ class PublishChannel(BorgModel,SignalEnable):
             super(PublishChannel,self).delete(using)
 
     def clean(self):
-        import ipdb;ipdb.set_trace()
+        if self.sync_geoserver_data:
+            if not self.wfs_version or not self.wfs_endpoint or not self.wms_version or not self.wms_endpoint or not self.gwc_endpoint:
+                raise ValidationError("Please input wfs, wms and gwc related information.")
         self.last_modify_time = timezone.now()
 
 
@@ -1965,7 +1972,6 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
     priority = models.PositiveIntegerField(default=1000)
     default_style = models.ForeignKey('Style',null=True,on_delete=models.SET_NULL,related_name="+")
     create_table_sql = SQLField(null=True, editable=False)
-    applications = models.TextField(blank=True,null=True,editable=False)
     geoserver_setting = models.TextField(blank=True,null=True,editable=False)
     pending_actions = models.IntegerField(blank=True,null=True,editable=False)
 
@@ -2269,7 +2275,6 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         self._post_execute(cursor)
 
     def publish_meta_data(self):
-        from application.models import Application_Layers
         if self.publish_status != ResourceStatus.Enabled:
             raise ValidationError("The publish({0}) is disabled".format(self.name))
 
@@ -2412,12 +2417,14 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         meta_data = {}
         meta_data["workspace"] = self.workspace.name
         meta_data["name"] = self.table_name
-        if SpatialTable.check_normal(self.spatial_type):
+        if SpatialTable.check_normal(self.spatial_type) or not self.workspace.publish_channel.sync_geoserver_data:
             meta_data["service_type"] = ""
         elif SpatialTable.check_raster(self.spatial_type):
             meta_data["service_type"] = "WMS"
+            meta_data["service_type_version"] = self.workspace.publish_channel.wms_version
         else:
             meta_data["service_type"] = "WFS"
+            meta_data["service_type_version"] = self.workspace.publish_channel.wfs_version
 
         meta_data["title"] = self.title
         meta_data["abstract"] = self.abstract
@@ -2455,6 +2462,25 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
                 with open(f,"r") as r:
                     meta_data["styles"].append({"content":(self.format_sld_style(r.read()) if style_format == "sld" else r.read()).encode("base64"),"format":style_format.upper()})
 
+        #OWS info
+        meta_data["ows_resource"] = {}
+        if meta_data["service_type"] == "WFS" and self.workspace.publish_channel.wfs_endpoint:
+            meta_data["ows_resource"]["wfs"] = True
+            meta_data["ows_resource"]["wfs_version"] = self.workspace.publish_channel.wfs_version
+            meta_data["ows_resource"]["wfs_endpoint"] = self.workspace.publish_channel.wfs_endpoint
+
+        if meta_data["service_type"] in ("WFS","WMS") and self.workspace.publish_channel.wfs_endpoint:
+            meta_data["ows_resource"]["wms"] = True
+            meta_data["ows_resource"]["wms_version"] = self.workspace.publish_channel.wms_version
+            meta_data["ows_resource"]["wms_endpoint"] = self.workspace.publish_channel.wms_endpoint
+
+            geo_settings = json.loads(self.geoserver_setting) if self.geoserver_setting else {}
+            if geo_settings.get("create_cache_layer",False):
+                meta_data["ows_resource"]["gwc"] = True
+                meta_data["ows_resource"]["gwc_endpoint"] = self.workspace.publish_channel.gwc_endpoint
+
+
+
         return meta_data
 
     def update_catalogue_service(self,style_dump_dir=None,md5=False,extra_datas=None):
@@ -2490,7 +2516,6 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
                     meta_data["styles"][style["name"]] = {"file":"{}{}".format(BorgConfiguration.MASTER_PATH_PREFIX, style_file),"default":style["default"]}
 
         #add extra data to meta data
-        from application.models import Application_Layers
         meta_data["workspace"] = self.workspace.name
         meta_data["name"] = self.table_name
         meta_data["schema"] = self.workspace.publish_schema
@@ -2502,7 +2527,6 @@ class Publish(Transform,ResourceStatusManagement,SignalEnable):
         meta_data["sync_postgres_data"] = self.workspace.publish_channel.sync_postgres_data
         meta_data["sync_geoserver_data"] = self.workspace.publish_channel.sync_geoserver_data
         meta_data["preview_path"] = "{}{}".format(BorgConfiguration.MASTER_PATH_PREFIX, settings.PREVIEW_ROOT)
-        meta_data["applications"] = ["{0}:{1}".format(o.application,o.order) for o in Application_Layers.objects.filter(publish=self)]
         meta_data["auth_level"] = self.workspace.auth_level
 
         if self.geoserver_setting:

@@ -23,7 +23,6 @@ class PublishAction(object):
         "relation_3":publish_data_action,
         "normal_tables":publish_data_action,
         "create_extra_index_sql": publish_data_action,
-        "applications":publish_feature_action,
         "geoserver_setting":publish_gwc_action
     }
 
@@ -67,6 +66,8 @@ class PublishAction(object):
         self._action = instance.pending_actions or 0
         if existing_instance:
             for f in  instance._meta.fields:
+                if f.name not in self._change_type_mapping:
+                    continue
                 rel1 = getattr(instance,f.name)
                 rel2 = getattr(existing_instance,f.name)
                 if f.name in ["relation_1","relation_2","relation_3"]:

@@ -605,7 +605,7 @@ class NormaliseAdmin(BorgAdmin,JobFields):
 
 class PublishAdmin(BorgAdmin,JobFields):
     list_display = ("name","_workspace","spatial_type_desc","interval","_enabled","_publish_content","_job_id", "_job_batch_id", "_job_status","waiting","running","completed","failed")
-    readonly_fields = ("applications","_create_table_sql","spatial_type_desc","last_modify_time","_publish_content","_job_batch_id","_job_id","_job_status","_job_message","waiting","running","completed","failed")
+    readonly_fields = ("_create_table_sql","spatial_type_desc","last_modify_time","_publish_content","_job_batch_id","_job_id","_job_status","_job_message","waiting","running","completed","failed")
     search_fields = ["name","status","workspace__name"]
 
     form = PublishForm

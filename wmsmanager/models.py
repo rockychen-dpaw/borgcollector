@@ -402,6 +402,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
         meta_data["workspace"] = self.server.workspace.name
         meta_data["name"] = self.layer_name
         meta_data["service_type"] = "WMS"
+        meta_data["service_type_version"] = self.workspace.publish_channel.wms_version
         meta_data["title"] = self.title
         meta_data["abstract"] = self.abstract
         meta_data["modified"] = (self.last_modify_time or self.last_refresh_time).astimezone(timezone.get_default_timezone()).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -410,6 +411,16 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
         meta_data["bounding_box"] = self.bbox or None
         meta_data["crs"] = self.crs or None
 
+        #ows resource
+        meta_data["ows_resource"] = {}
+        meta_data["ows_resource"]["wms"] = True
+        meta_data["ows_resource"]["wms_version"] = self.workspace.publish_channel.wms_version
+        meta_data["ows_resource"]["wms_endpoint"] = self.workspace.publish_channel.wms_endpoint
+
+        geo_settings = json.loads(self.geoserver_setting) if self.geoserver_setting else {}
+        if geo_settings.get("create_cache_layer",False):
+            meta_data["ows_resource"]["gwc"] = True
+            meta_data["ows_resource"]["gwc_endpoint"] = self.workspace.publish_channel.gwc_endpoint
         return meta_data
 
     def update_catalogue_service(self,extra_datas=None):
@@ -424,12 +435,10 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
         meta_data = res.json()
 
         #add extra data to meta data
-        from application.models import Application_Layers
         meta_data["workspace"] = self.server.workspace.name
         meta_data["name"] = self.layer_name
         meta_data["native_name"] = self.name
         meta_data["store"] = self.server.name
-        meta_data["applications"] = ["{0}:{1}".format(o.application,o.order) for o in Application_Layers.objects.filter(wmslayer=self)]
         meta_data["auth_level"] = self.server.workspace.auth_level
 
         meta_data["channel"] = self.server.workspace.publish_channel.name

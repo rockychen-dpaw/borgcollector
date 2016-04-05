@@ -70,7 +70,7 @@ INSTALLED_APPS = (
     'harvest',
     'filemanager',
     #'rolemanager',
-    'application',
+    #'application',
     'wmsmanager',
     'layergroup',
     'monitor',
