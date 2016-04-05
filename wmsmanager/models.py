@@ -115,7 +115,6 @@ class WmsServer(models.Model,ResourceStatusManagement,SignalEnable):
         else:
             res = requests.get(self.get_capability_url, verify=False)
         res.raise_for_status()
-        import ipdb;ipdb.set_trace()
         xml_data = res.text.encode('utf-8')
         root = ElementTree.fromstring(xml_data)
         first_level_layer = root.find("Capability/Layer")
@@ -149,6 +148,7 @@ class WmsServer(models.Model,ResourceStatusManagement,SignalEnable):
         if layer_name_element is not None:
             #import ipdb;ipdb.set_trace()
             layer_name = layer_name_element.text
+            kmi_name = self.name.replace(":","_").replace(" ","_")
             layer_abstract_element = layer.find("Abstract")
             boundingbox_element = layer.find("BoundingBox")
             crs = None
@@ -177,13 +177,19 @@ class WmsServer(models.Model,ResourceStatusManagement,SignalEnable):
                     if existed_layer.abstract and not existed_layer.kmi_abstract:
                         changed = True
                     existed_layer.abstract = None
-    
+                
+                if existed_layer.crs != crs:
+                    existed_layer.crs = crs
+                    changed = True
+
+                if existed_layer.bbox != bbox:
+                    existed_layer.bbox = bbox
+                    changed = True
+
                 if changed:                
                     existed_layer.status = existed_layer.next_status(ResourceAction.UPDATE)
 
                 existed_layer.path = path
-                existed_layer.crs = crs
-                existed_layer.bbox = bbox
                 existed_layer.last_refresh_time = process_time
                 if existed_layer.last_modify_time is None:
                     existed_layer.geoserver_setting = default_layer_geoserver_setting_json
@@ -192,6 +198,7 @@ class WmsServer(models.Model,ResourceStatusManagement,SignalEnable):
                 #layer not exist
                 existed_layer = WmsLayer(server = self,
                                         name=layer_name,
+                                        kmi_name=kmi_name,
                                         title=layer_title_element.text,
                                         path=path,
                                         abstract=layer_abstract_element.text if layer_abstract_element is not None else None,
@@ -336,7 +343,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
     bbox = models.CharField(max_length=128,null=True,editable=False)
     title = models.CharField(max_length=512,null=True,editable=False)
     abstract = models.TextField(null=True,editable=False)
-    kmi_name = models.SlugField(max_length=128,null=True,editable=True,blank=True, validators=[validate_slug])
+    kmi_name = models.SlugField(max_length=128,null=False,editable=True,blank=False, validators=[validate_slug])
     kmi_title = models.CharField(max_length=512,null=True,editable=True,blank=True)
     kmi_abstract = models.TextField(null=True,editable=True,blank=True)
     path = models.CharField(max_length=512,null=True,editable=False)
@@ -349,13 +356,6 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
     last_modify_time = models.DateTimeField(null=True,editable=False)
 
 
-    @property
-    def layer_name(self):
-        """
-        The name used in the geoserver
-        """
-        return self.kmi_name or self.name.replace(":","_").replace(" ","_")
- 
     @property
     def layer_title(self):
         return self.kmi_title or self.title
@@ -400,7 +400,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
     def builtin_metadata(self):
         meta_data = {}
         meta_data["workspace"] = self.server.workspace.name
-        meta_data["name"] = self.layer_name
+        meta_data["name"] = self.kmi_name
         meta_data["service_type"] = "WMS"
         meta_data["service_type_version"] = self.workspace.publish_channel.wms_version
         meta_data["title"] = self.title
@@ -436,7 +436,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
 
         #add extra data to meta data
         meta_data["workspace"] = self.server.workspace.name
-        meta_data["name"] = self.layer_name
+        meta_data["name"] = self.kmi_name
         meta_data["native_name"] = self.name
         meta_data["store"] = self.server.name
         meta_data["auth_level"] = self.server.workspace.auth_level
@@ -491,7 +491,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
          return True if store is removed for repository; return false, if layers does not existed in repository.
         """
         #remove it from catalogue service
-        res = requests.delete("{}/catalogue/api/records/{}:{}/".format(settings.CSW_URL,self.server.workspace.name,self.layer_name),auth=(settings.CSW_USER,settings.CSW_PASSWORD))
+        res = requests.delete("{}/catalogue/api/records/{}:{}/".format(settings.CSW_URL,self.server.workspace.name,self.kmi_name),auth=(settings.CSW_USER,settings.CSW_PASSWORD))
         res.raise_for_status()
 
         json_files = [ self.json_filename_abs(action) for action in [ 'publish','empty_gwc' ] ]
@@ -526,7 +526,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
             meta_data = self.update_catalogue_service(extra_datas={"publication_date":datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")})
 
             #write meta data file
-            file_name = "{}.{}.meta.json".format(self.server.workspace.name,self.layer_name)
+            file_name = "{}.{}.meta.json".format(self.server.workspace.name,self.kmi_name)
             meta_file = os.path.join(BorgConfiguration.WMS_LAYER_DIR,file_name)
             #create the dir if required
             if not os.path.exists(os.path.dirname(meta_file)):
@@ -578,7 +578,7 @@ class WmsLayer(models.Model,ResourceStatusManagement,SignalEnable):
         hg = None
         try:
             json_out = {}
-            json_out["name"] = self.layer_name
+            json_out["name"] = self.kmi_name
             json_out["workspace"] = self.server.workspace.name
             json_out["store"] = self.server.name
             json_out["action"] = "empty_gwc"

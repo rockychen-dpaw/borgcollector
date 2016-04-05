@@ -61,15 +61,15 @@ Borg Collector needs the following environment variables defined (e.g. .env for 
 ### Publish metadata.
 ```
    Url : https://host:port/api/metas/
-   Data: {"publishes":["publish1","publish2"]}
+   Data: {"layers":["wokspace1:layer1","workspace2:layer2"]}
    Success Response: 
         {
             "status":true,
-            "publish1":{
+            "workspace1:layer1":{
                         "status": true,
                         "message":"Succeed"
             },
-            "publish2":{
+            "workspace2:layer2":{
                         "status":true,
                         "message":"Succeed"
             }
@@ -77,11 +77,11 @@ Borg Collector needs the following environment variables defined (e.g. .env for 
    Failed Response: 
         {
             "status":false,
-            "publish1":{
+            "workspace1:layer1":{
                         "status": true,
                         "message":"Succeed"
             },
-            "publish2":{
+            "workspace2:layer2":{
                         "status":false,
                         "message":"Publish failed"
             }

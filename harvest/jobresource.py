@@ -13,7 +13,8 @@ except ImportError:
 from django.contrib import auth
 
 from harvest.models import Job
-from tablemanager.models import Publish
+from tablemanager.models import Publish,Workspace
+from wmsmanager.models import WmsLayer
 from harvest.jobstatemachine import JobStatemachine
 from borg_utils.hg_batch_push import try_set_push_owner, try_clear_push_owner, try_push_to_repository
 from borg_utils.jobintervals import Triggered
@@ -97,33 +98,62 @@ class MetaResource(DjangoResource,BasicHttpAuthMixin):
         result = None
         try_set_push_owner("meta_resource")
         try:
-            for name in self.data.get('publishes') or []:
-                resp[name] = {}
+            for layer in self.data.get('layers') or []:
+                workspace,name = layer.split(":")
+                resp[layer] = {}
+                #get the workspace object
                 try:
-                    pub = Publish.objects.get(name=name)
+                    workspace = Workspace.objects.get(name=workspace)
+                except Workspace.DoesNotExist:
+                    #workspace does not exist
+                    resp["status"] = False
+                    resp[layer]["status"] = False
+                    resp[layer]["message"] = "Workspace does not exist.".format(name)
+                    continue
+                    
+                try:
+                    #try to locate it from publishs, and publish the meta data if found
+                    pub = Publish.objects.get(workspace=workspace,name=name)
+                    try:
+                        pub.publish_meta_data()
+                        resp[layer]["status"] = True
+                        resp[layer]["message"] = "Succeed."
+                    except Exception as e:
+                        resp["status"] = False
+                        resp[layer]["status"] = False
+                        resp[layer]["message"] = "Publish meta data failed!{}".format(e)
+                        continue
                 except Publish.DoesNotExist:
-                    resp["status"] = False
-                    resp[name]["status"] = False
-                    resp[name]["message"] = "Does not exist.".format(name)
-                    continue
-                try:
-                    pub.publish_meta_data()
-                    resp[name]["status"] = True
-                    resp[name]["message"] = "Succeed."
-                except Exception as e:
-                    resp["status"] = False
-                    resp[name]["status"] = False
-                    resp[name]["message"] = "Publish failed!{}".format(e)
-                    continue
+                    #not a publish object, try to locate it from wms layers, and publish it if found
+                    try:
+                        wmslayer = WmsLayer.objects.get(server__workspace=workspace,kmi_name=name)
+                        try:
+                            wmslayer.publish()
+                            resp[layer]["status"] = True
+                            resp[layer]["message"] = "Succeed."
+                        except Exception as e:
+                            resp["status"] = False
+                            resp[layer]["status"] = False
+                            resp[layer]["message"] = "Publish wms layer failed!{}".format(e)
+                            continue
+                    except WmsLayer.DoesNotExist:
+                        #layer does not exist,
+                        resp["status"] = False
+                        resp[layer]["status"] = False
+                        resp[layer]["message"] = "Does not exist.".format(name)
+                        continue
+
+            #push all files into repository at once.
             try:
                 try_push_to_repository('meta_resource',enforce=True)
             except Exception as e:
+                #push failed, set status to false, and proper messages for related layers.
                 resp["status"] = False
-                for name in self.data.get('published') or []:
-                    if resp[name]["status"]:
+                for layer in self.data.get('layers') or []:
+                    if resp[layer]["status"]:
                         #publish succeed but push failed
-                        resp[name]["status"] = False
-                        resp[name]["message"] = "Push to repository failed!{}".format(e)
+                        resp[layer]["status"] = False
+                        resp[layer]["message"] = "Push to repository failed!{}".format(e)
         finally:
             try_clear_push_owner("meta_resource")
             
